@@ -1,0 +1,11 @@
+Day 3:
+
+Assignment : 
+
+1.Create a git Repo.
+2.Clone the git repo to your VS code.
+3.Create Branch from the Main Branch.
+4.Start adding files to the got Repo.
+5.Push the Codes to the Main branch by merging the sub branch.
+
+

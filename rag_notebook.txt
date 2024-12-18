@@ -1,0 +1,327 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# A simple Rag Application Using Python/Langchain/Ollama "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Imports\n",
+    "from langchain_community.document_loaders import UnstructuredPDFLoader\n",
+    "from langchain_ollama import OllamaEmbeddings\n",
+    "from langchain_text_splitters import RecursiveCharacterTextSplitter\n",
+    "from langchain_community.vectorstores import Chroma\n",
+    "from langchain.prompts import ChatPromptTemplate, PromptTemplate\n",
+    "from langchain_core.output_parsers import StrOutputParser\n",
+    "from langchain_ollama.chat_models import ChatOllama\n",
+    "from langchain_core.runnables import RunnablePassthrough\n",
+    "from langchain.retrievers.multi_query import MultiQueryRetriever\n",
+    "\n",
+    "# Suppress warnings\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')\n",
+    "\n",
+    "# Jupyter-specific imports\n",
+    "from IPython.display import display, Markdown\n",
+    "\n",
+    "# Set environment variable for protobuf\n",
+    "\n",
+    "import os\n",
+    "os.environ[\"PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION\"] = \"python\""
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Load PDF"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "PDF loaded successfully: C:\\Karpagam-Bio-Batch1-Rag-app\\pdfs\\01.pdf\n",
+      "Extracted 2 pages of content.\n"
+     ]
+    }
+   ],
+   "source": [
+    "from PyPDF2 import PdfReader\n",
+    "from langchain.schema import Document\n",
+    "\n",
+    "# Load the PDF\n",
+    "local_path = \"C:\\\\Karpagam-Bio-Batch1-Rag-app\\\\pdfs\\\\01.pdf\"\n",
+    "\n",
+    "if local_path:\n",
+    "    # Read PDF and extract text\n",
+    "    reader = PdfReader(local_path)\n",
+    "    data=[]\n",
+    "\n",
+    "    for page in reader.pages:\n",
+    "        text = page.extract_text()\n",
+    "        if text:\n",
+    "            data.append(text)\n",
+    "\n",
+    "    print(f\"PDF loaded successfully: {local_path}\")\n",
+    "    print(f\"Extracted {len(data)} pages of content.\")\n",
+    "else:\n",
+    "    print(\"Upload a PDF file\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Split text into chunks"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Text split into 7 chunks\n",
+      "\n",
+      "Chunk 1:\n",
+      "[ NationalRad Sample Body Radiology Report ]     Imaging Center 123 Main Street Anywhere, USA 01234 Phone 123.456.7890 Fax 123.456.7890   PATIENT: JOHN SMITH DOB: 5/5/1955 FILE #: 12345 PHYSICIAN: REFERRING EXAM: MRI ABDOMEN WITH CONTRAST DATE: 1/1/2011  \n",
+      "Report approved on    NationalRad | Headquartered: Florida | Diagnostic Imaging Services: Nationwide | 877.734.6674 | www.NationalRad.com\n",
+      "\n",
+      "Chunk 2:\n",
+      "CLINICAL INFORMATION  History pancreatic cancer. Status post aortic chemotherapy and Whipple procedure on DATE. Chronic low back pain. Abdominal pain. Follow-up examination.  COMPARISON  Comparison is made with previous CT scan reported DATE and DATE  CONTRAST  15 mL of MultiHance was administered per protocol.  TECHNIQUE  Coronal T2-weighted axial and T2; axial T2 fat sat clear, T2 and, T2 gradient-echo, and in phase sequences; dynamic axial T1 fat-sat post contrast additional subtraction reconstructions; coronal single shot MRCP sequences  FINDINGS  Marked hydronephrosis and hydroureter are present in the right kidney (series 12 images 19-27). Low signal intensity foci in the proximal right ureter (series 6 image 36) likely represents flow related artifact. Possible septations may be present in the distal right ureter (series 12 image 20). CT scan of the abdomen and pelvis with and without contrast is recommended to evaluate for possible stone or distal obstructing lesion. Findings\n",
+      "\n",
+      "Chunk 3:\n",
+      "in the distal right ureter (series 12 image 20). CT scan of the abdomen and pelvis with and without contrast is recommended to evaluate for possible stone or distal obstructing lesion. Findings are new since the previous examination. Decreased enhancement of the right kidney in comparison to the left during the\n"
+     ]
+    }
+   ],
+   "source": [
+    "documents = [Document(page_content=page, metadata={\"source\": f\"Page {i + 1}\"}) for i, page in enumerate(data)]\n",
+    "\n",
+    "# Split text into chunks\n",
+    "text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)\n",
+    "chunks = text_splitter.split_documents(documents)\n",
+    "print(f\"Text split into {len(chunks)} chunks\")\n",
+    "\n",
+    "# Print a sample chunk for verification\n",
+    "for i, chunk in enumerate(chunks[:3]):  # Show only the first 3 chunks\n",
+    "    print(f\"\\nChunk {i + 1}:\\n{chunk.page_content}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Create vector database"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Vector database created successfully\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Create vector database\n",
+    "vector_db = Chroma.from_documents(\n",
+    "    documents=chunks,\n",
+    "    embedding=OllamaEmbeddings(model=\"nomic-embed-text\"),\n",
+    "    collection_name=\"local-rag\"\n",
+    ")\n",
+    "print(\"Vector database created successfully\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Set up LLM and Retrieval"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Set up LLM and retrieval\n",
+    "local_model = \"llama3.2:3b\"  # or whichever model you prefer\n",
+    "llm = ChatOllama(model=local_model)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Query prompt template\n",
+    "QUERY_PROMPT = PromptTemplate(\n",
+    "    input_variables=[\"question\"],\n",
+    "    template=\"\"\"You are a medical Assistant Bot you need to clearly analyse the data\n",
+    "    from the chunks retrived from the vector database and retrive chunks similar and \n",
+    "    related to the question asked and also mainly tell if there are any abnormalities found \n",
+    "    on the report and if any abnormality found please give a recommendataion to visit the\n",
+    "    doctor clinic. Please note this is the question asked by user on web browser screen : {question}\"\"\",\n",
+    ")\n",
+    "\n",
+    "# Set up retriever\n",
+    "retriever = MultiQueryRetriever.from_llm(\n",
+    "    vector_db.as_retriever(), \n",
+    "    llm,\n",
+    "    prompt=QUERY_PROMPT\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Create chain"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# RAG prompt template\n",
+    "template = \"\"\"Answer the question based ONLY on the following context:\n",
+    "{context}\n",
+    "Question: {question}\n",
+    "\"\"\"\n",
+    "\n",
+    "prompt = ChatPromptTemplate.from_template(template)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Create chain\n",
+    "chain = (\n",
+    "    {\"context\": retriever, \"question\": RunnablePassthrough()}\n",
+    "    | prompt\n",
+    "    | llm\n",
+    "    | StrOutputParser()\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Chat with PDF"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def chat_with_pdf(question):\n",
+    "    \"\"\"\n",
+    "    Chat with the PDF using the RAG chain.\n",
+    "    \"\"\"\n",
+    "    return display(Markdown(chain.invoke(question)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/markdown": [
+       "The main idea of this document appears to be a radiology report from an MRI examination, specifically of the abdomen with contrast, performed on January 1, 2011. The report highlights various findings, including marked hydronephrosis and hydroureter in the right kidney, stable mild pelviectasis in the left kidney, postoperative changes from previous Whipple procedure, and other abdominal abnormalities. The report concludes with recommendations for further evaluation, such as a CT scan of the abdomen and pelvis with and without contrast."
+      ],
+      "text/plain": [
+       "<IPython.core.display.Markdown object>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# Example 1\n",
+    "chat_with_pdf(\"What is the main idea of this document?\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Clean up (optional)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Vector database deleted successfully\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Optional: Clean up when done \n",
+    "vector_db.delete_collection()\n",
+    "print(\"Vector database deleted successfully\")"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.7"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}

@@ -1,0 +1,14 @@
+Day 2:
+
+1.Python With Preferred Version 3.12
+2.Vs code.
+3.Vs code python extension.
+4.Vs code Jupiter notebook extension.
+5.Check Python system environment path set properly.
+6.Ollama install 
+7.llama3.2:3b model download.
+8.Repository Create (local / Git Repository)
+9.Create Python file for Rag application.
+
+
+
